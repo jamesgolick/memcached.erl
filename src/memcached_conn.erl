@@ -6,13 +6,15 @@
 
 -export([start_link/0]).
 
--export([get/2]).
+-export([get/2,binary_join/2]).
 
 %% gen_fsm callbacks
 
 %% state callbacks
 
--export([ready/3]).
+-export([ready/3,
+	 set/3,
+	 set/4]).
 
 %% generic callbacks
 
@@ -36,6 +38,12 @@ start_link() ->
 get(Pid, Key) when is_binary(Key) ->
   gen_fsm:sync_send_event(Pid, {get, Key}).
 
+set(Pid, Key, Value) when is_binary(Key) and is_binary(Value) ->
+  set(Pid, Key, Value, 0).
+
+set(Pid, Key, Value, Expires) when is_binary(Key) and is_binary(Value) ->
+  gen_fsm:sync_send_event(Pid, {set, Key, Value, Expires}).
+
 %% gen_fsm callbacks
 
 init([Host, Port]) ->
@@ -44,6 +52,16 @@ init([Host, Port]) ->
 
 ready({get, Key}, From, State) ->
   gen_tcp:send(State#state.socket, <<"get ", Key/binary, "\n">>),
+  {next_state, waiting, State#state{waiter=From}};
+ready({set, Key, Value, Expires}, From, State) ->
+  Length = integer_to_binary(byte_size(Value)),
+  ExpiresBinary = integer_to_binary(Expires),
+  CmdParts = [[<<"set">>, Key, <<"0">>, ExpiresBinary, Length], [Value]],
+  Cmd = lists:foldl(fun(RawLine, Command) ->
+	Line = binary_join(RawLine, <<" ">>),
+	<<Command/binary, Line/binary, "\r\n">>
+    end, <<"">>, CmdParts),
+  gen_tcp:send(State#state.socket, Cmd),
   {next_state, waiting, State#state{waiter=From}}.
 
 handle_event(_Event, StateName, State) ->
@@ -52,7 +70,9 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
   {reply, ok, StateName, State}.
 
-
+handle_info({tcp,Sock,<<"STORED\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
+  gen_fsm:reply(Waiter, true),
+  {next_state, ready, #state{socket=Sock}};
 handle_info({tcp,Sock,<<"END\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
   gen_fsm:reply(Waiter, undefined),
   {next_state, ready, #state{socket=Sock}};
@@ -61,6 +81,7 @@ handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting,#state{socket=Soc
   gen_fsm:reply(Waiter, Value),
   {next_state, ready, #state{socket=Sock}};
 handle_info(_Info, StateName, State) ->
+  io:format("~p~n", [_Info]),
   {next_state, StateName, State}.
 
 terminate(_Reason, _StateName, _State) ->
@@ -82,3 +103,14 @@ get_values(Message, Acc) ->
   Length = list_to_integer(binary_to_list(RawLength)),
   <<Value:Length/binary, "\r\n", Remainder2/binary>> = Remainder,
   get_values(Remainder2, [{Key, Value} | Acc]).
+
+binary_join([Head | List], Pattern) ->
+  binary_join(List, Pattern, Head).
+
+binary_join([], _, Acc) ->
+  Acc;
+binary_join([Head | List], Pattern, Acc) ->
+  binary_join(List, Pattern, <<Acc/binary, Pattern/binary, Head/binary>>).
+
+integer_to_binary(Int) ->
+  list_to_binary(lists:flatten(io_lib:format("~p", [Int]))).
