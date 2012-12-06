@@ -6,15 +6,16 @@
 
 -export([start_link/0]).
 
--export([get/2,binary_join/2]).
+-export([get/2,
+	 multiget/2,
+	 set/3,
+	 set/4]).
 
 %% gen_fsm callbacks
 
 %% state callbacks
 
--export([ready/3,
-	 set/3,
-	 set/4]).
+-export([ready/3]).
 
 %% generic callbacks
 
@@ -38,6 +39,9 @@ start_link() ->
 get(Pid, Key) when is_binary(Key) ->
   gen_fsm:sync_send_event(Pid, {get, Key}).
 
+multiget(Pid, Keys) when is_list(Keys) ->
+  gen_fsm:sync_send_event(Pid, {multiget, Keys}).
+
 set(Pid, Key, Value) when is_binary(Key) and is_binary(Value) ->
   set(Pid, Key, Value, 0).
 
@@ -51,8 +55,12 @@ init([Host, Port]) ->
   {ok, ready, #state{socket=Socket}}.
 
 ready({get, Key}, From, State) ->
-  gen_tcp:send(State#state.socket, <<"get ", Key/binary, "\n">>),
-  {next_state, waiting, State#state{waiter=From}};
+  gen_tcp:send(State#state.socket, <<"get ", Key/binary, "\r\n">>),
+  {next_state, waiting_for_get, State#state{waiter=From}};
+ready({multiget, Keys}, From, State) ->
+  KeyList = binary_join(Keys, <<" ">>),
+  gen_tcp:send(State#state.socket, <<"get ", KeyList/binary, "\r\n">>),
+  {next_state, waiting_for_multiget, State#state{waiter=From}};
 ready({set, Key, Value, Expires}, From, State) ->
   Length = integer_to_binary(byte_size(Value)),
   ExpiresBinary = integer_to_binary(Expires),
@@ -76,9 +84,12 @@ handle_info({tcp,Sock,<<"STORED\r\n">>},waiting,#state{socket=Sock,waiter=Waiter
 handle_info({tcp,Sock,<<"END\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
   gen_fsm:reply(Waiter, undefined),
   {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting,#state{socket=Sock,waiter=Waiter}) ->
+handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
   [{_, Value} | _] = get_values(Message),
   gen_fsm:reply(Waiter, Value),
+  {next_state, ready, #state{socket=Sock}};
+handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_multiget,#state{socket=Sock,waiter=Waiter}) ->
+  gen_fsm:reply(Waiter, get_values(Message)),
   {next_state, ready, #state{socket=Sock}};
 handle_info(_Info, StateName, State) ->
   io:format("~p~n", [_Info]),
