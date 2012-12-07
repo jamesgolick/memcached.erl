@@ -1,10 +1,10 @@
-
 -module(memcached_sup).
 
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+	 add_server/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -19,10 +19,19 @@
 start_link() ->
   supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+add_server(Server) ->
+  PoolDefaults = [{worker_module, memcached_conn},
+		  {name, {local, list_to_atom(Server)}}],
+  {ok, PoolOptions} = application:get_env(memcached, pool_options),
+  Spec = poolboy:child_spec(Server,
+			    PoolDefaults ++ PoolOptions,
+			    Server),
+  supervisor:start_child(?MODULE, Spec).
+
+
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
   {ok, { {one_for_one, 5, 10}, []} }.
-

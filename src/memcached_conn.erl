@@ -4,7 +4,7 @@
 
 %% public apis
 
--export([start_link/0]).
+-export([start_link/1]).
 
 -export([get/2,
 	 multiget/2,
@@ -33,8 +33,16 @@
 
 %% public api
 
-start_link() ->
-  gen_fsm:start_link(?MODULE, ["localhost", 11211], []).
+start_link(Server) ->
+  case string:tokens(Server, ":") of
+    [Host] ->
+      start_link(Host, 11211);
+    [Host, Port] ->
+      start_link(Host, list_to_integer(Port))
+  end.
+
+start_link(Host, Port) ->
+  gen_fsm:start_link(?MODULE, [Host, Port], []).
 
 get(Pid, Key) when is_binary(Key) ->
   gen_fsm:sync_send_event(Pid, {get, Key}).
