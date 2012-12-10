@@ -89,8 +89,11 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info({tcp,Sock,<<"STORED\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
   gen_fsm:reply(Waiter, true),
   {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,<<"END\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
+handle_info({tcp,Sock,<<"END\r\n">>},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
   gen_fsm:reply(Waiter, undefined),
+  {next_state, ready, #state{socket=Sock}};
+handle_info({tcp,Sock,<<"END\r\n">>},waiting_for_multiget,#state{socket=Sock,waiter=Waiter}) ->
+  gen_fsm:reply(Waiter, []),
   {next_state, ready, #state{socket=Sock}};
 handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
   [{_, Value} | _] = get_values(Message),
@@ -100,7 +103,6 @@ handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_multiget,#sta
   gen_fsm:reply(Waiter, get_values(Message)),
   {next_state, ready, #state{socket=Sock}};
 handle_info(_Info, StateName, State) ->
-  io:format("~p~n", [_Info]),
   {next_state, StateName, State}.
 
 terminate(_Reason, _StateName, _State) ->
