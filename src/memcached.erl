@@ -2,6 +2,10 @@
 
 -behaviour(gen_server).
 
+%% memcached commands
+
+-export([get/1]).
+
 -export([start_link/1,
 	 state/1,
 	 stop/1]).
@@ -21,7 +25,7 @@
 
 start_link(Servers) ->
   memcached_sup:start_link(),
-  gen_server:start_link(?MODULE, [Servers], []).
+  gen_server:start_link({local, ?MODULE}, ?MODULE, [Servers], []).
 
 stop(Pid) ->
   gen_server:call(Pid, stop).
@@ -29,13 +33,16 @@ stop(Pid) ->
 state(Pid) ->
   gen_server:call(Pid, state).
 
+get(Key) ->
+  gen_server:call(?MODULE, {get, Key}).
+
 %% gen_server callbacks
 
 init([Servers]) ->
   lager:debug("init with servers: ~p", [Servers]),
   Ring = memcached_ring:create(Servers),
   lists:foreach(fun(Server) ->
-	ok
+	memcached_pool:create(Server)
     end, Servers),
   {ok, #state{ring=Ring}}.
 
@@ -47,9 +54,13 @@ handle_call(state, _From, State) ->
   lager:debug("~p is asking for the state.", [_From]),
   {reply, State, State};
 
-handle_call(get, _From, State) ->
-  lager:debug("~p is asking for the state.", [_From]),
-  {reply, State, State};
+handle_call({get, Key}, _From, State=#state{ring=Ring}) ->
+  lager:debug("get ~p", [Key]),
+  Server = memcached_ring:get(Key, Ring),
+  Value = memcached_pool:with_connection(Server, fun(Connection) ->
+	memcached_conn:get(Connection, Key)
+    end),
+  {reply, Value, State};
 
 handle_call(_Request, _From, State) ->
   lager:debug("call ~p, ~p, ~p.", [_Request, _From, State]),
