@@ -4,7 +4,10 @@
 
 %% memcached commands
 
--export([get/1]).
+-export([get_ring/0,
+	 get/1,
+	 set/2,
+	 set/3]).
 
 -export([start_link/1,
 	 state/1,
@@ -18,7 +21,9 @@
     	 code_change/3]).
 
 -record(state, {
-    ring
+    ring,
+    live_nodes,
+    dead_nodes = []
   }).
 
 %% Public API
@@ -33,8 +38,21 @@ stop(Pid) ->
 state(Pid) ->
   gen_server:call(Pid, state).
 
+get_ring() ->
+  gen_server:call(?MODULE, get_ring).
+
 get(Key) ->
-  gen_server:call(?MODULE, {get, Key}).
+  with_connection(Key, fun(Connection) ->
+	memcached_conn:get(Connection, Key)
+    end).
+
+set(Key, Value) ->
+  set(Key, Value, 0).
+
+set(Key, Value, Expires) ->
+  with_connection(Key, fun(Connection) ->
+	memcached_conn:set(Connection, Key, Value, Expires)
+    end).
 
 %% gen_server callbacks
 
@@ -44,7 +62,7 @@ init([Servers]) ->
   lists:foreach(fun(Server) ->
 	memcached_pool:create(Server)
     end, Servers),
-  {ok, #state{ring=Ring}}.
+  {ok, #state{ring=Ring,live_nodes=Servers}}.
 
 handle_call(stop, _From, State) ->
   lager:debug("stopping by ~p, state was ~p.", [_From, State]),
@@ -54,13 +72,9 @@ handle_call(state, _From, State) ->
   lager:debug("~p is asking for the state.", [_From]),
   {reply, State, State};
 
-handle_call({get, Key}, _From, State=#state{ring=Ring}) ->
-  lager:debug("get ~p", [Key]),
-  Server = memcached_ring:get(Key, Ring),
-  Value = memcached_pool:with_connection(Server, fun(Connection) ->
-	memcached_conn:get(Connection, Key)
-    end),
-  {reply, Value, State};
+handle_call(get_ring, _From, State) ->
+  lager:debug("~p is asking for the ring.", [_From]),
+  {reply, State#state.ring, State};
 
 handle_call(_Request, _From, State) ->
   lager:debug("call ~p, ~p, ~p.", [_Request, _From, State]),
@@ -83,3 +97,8 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 %% Internal functions
+
+with_connection(Key, Fun) ->
+  Ring = get_ring(),
+  Server = memcached_ring:get(Key, Ring),
+  memcached_pool:with_connection(Server, Fun).
