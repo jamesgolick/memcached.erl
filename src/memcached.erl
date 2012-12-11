@@ -5,7 +5,9 @@
 %% memcached commands
 
 -export([get_ring/0,
+	 mark_down/1,
 	 get/1,
+	 multiget/1,
 	 set/2,
 	 set/3]).
 
@@ -22,8 +24,8 @@
 
 -record(state, {
     ring,
-    live_nodes,
-    dead_nodes = []
+    live_nodes :: set(),
+    dead_nodes :: set()
   }).
 
 -define(MAX_ATTEMPTS, 3).
@@ -44,6 +46,9 @@ state(Pid) ->
 get_ring() ->
   gen_server:call(?MODULE, get_ring).
 
+mark_down(Server) ->
+  gen_server:call(?MODULE, {mark_down, Server}).
+
 get(Key) ->
   perform(Key, fun(Connection) ->
 	memcached_conn:get(Connection, Key)
@@ -56,6 +61,10 @@ set(Key, Value, Expires) ->
   perform(Key, fun(Connection) ->
 	memcached_conn:set(Connection, Key, Value, Expires)
     end).
+
+multiget(Keys) ->
+  {ok, Coordinator} = memcached_multiget_coordinator:start(Keys),
+  memcached_multiget_coordinator:get_result(Coordinator).
 
 %% gen_server callbacks
 
@@ -130,9 +139,6 @@ code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
 %% Internal functions
-
-mark_down(Server) ->
-  gen_server:call(?MODULE, {mark_down, Server}).
 
 mark_up(Server) ->
   gen_server:call(?MODULE, {mark_up, Server}).
