@@ -106,6 +106,7 @@ handle_info(_Info, StateName, State) ->
   {next_state, StateName, State}.
 
 terminate(_Reason, _StateName, _State) ->
+  lager:debug("terminating with reason ~p", [_Reason]),
   ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
