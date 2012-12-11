@@ -22,7 +22,7 @@ start_link() ->
 add_server(Server) ->
   PoolDefaults = [{worker_module, memcached_conn},
 		  {name, {local, list_to_atom(Server)}}],
-  {ok, PoolOptions} = application:get_env(memcached, pool_options),
+  PoolOptions = get_pool_options(),
   Spec = poolboy:child_spec(Server,
 			    PoolDefaults ++ PoolOptions,
 			    Server),
@@ -35,3 +35,12 @@ add_server(Server) ->
 
 init([]) ->
   {ok, { {one_for_one, 5, 10}, []} }.
+
+get_pool_options() ->
+  case application:get_env(memcached, pool_options) of
+    {ok, Options} ->
+      Options;
+    _ ->
+      []
+  end.
+
