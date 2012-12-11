@@ -8,6 +8,7 @@
 	 mark_down/1,
 	 get/1,
 	 multiget/1,
+	 multiget/2,
 	 set/2,
 	 set/3]).
 
@@ -65,6 +66,17 @@ set(Key, Value, Expires) ->
 multiget(Keys) ->
   {ok, Coordinator} = memcached_multiget_coordinator:start(Keys),
   memcached_multiget_coordinator:get_result(Coordinator).
+
+multiget(Keys, MissFun) ->
+  Result = multiget(Keys),
+  HitKeys = [Key || {Key, _} <- Result],
+  MissedKeys = Keys -- HitKeys,
+  lager:debug("missed keys ~p", [MissedKeys]),
+  MissedValues = MissFun(MissedKeys),
+  lists:foreach(fun({Key, Value}) ->
+	set(Key, Value)
+    end, MissedValues),
+  Result ++ MissedValues.
 
 %% gen_server callbacks
 
