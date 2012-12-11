@@ -64,8 +64,14 @@ set(Key, Value, Expires) ->
     end).
 
 multiget(Keys) ->
-  {ok, Coordinator} = memcached_multiget_coordinator:start(Keys),
-  memcached_multiget_coordinator:get_result(Coordinator).
+  case get_ring() of
+    no_live_nodes ->
+      lager:info("no live nodes!"),
+      [];
+    Ring ->
+      {ok, Coordinator} = memcached_multiget_coordinator:start(Keys, Ring),
+      memcached_multiget_coordinator:get_result(Coordinator)
+  end.
 
 multiget(Keys, MissFun) ->
   Result = multiget(Keys),

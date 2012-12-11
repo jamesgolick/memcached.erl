@@ -4,7 +4,7 @@
 
 %% public apis
 
--export([start/1,
+-export([start/2,
 	 get_result/1]).
 
 %% gen_fsm callbacks
@@ -26,16 +26,15 @@
 
 %% public api
 
-start(Keys) ->
-  gen_fsm:start(?MODULE, [Keys], []).
+start(Keys, Ring) ->
+  gen_fsm:start(?MODULE, [Keys, Ring], []).
 
 get_result(Pid) ->
   gen_fsm:sync_send_event(Pid, get_result).
 
 %% gen_fsm callbacks
 
-init([Keys]) ->
-  Ring = memcached:get_ring(),
+init([Keys, Ring]) ->
   Nodes = lists:foldl(fun(Key, NodeList) ->
 	Node = memcached_ring:get(Key, Ring),
 	NodeKeys = proplists:get_value(Node, NodeList, []),
