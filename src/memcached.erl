@@ -76,13 +76,17 @@ multiget(Keys) ->
 multiget(Keys, MissFun) ->
   Result = multiget(Keys),
   HitKeys = [Key || {Key, _} <- Result],
-  MissedKeys = Keys -- HitKeys,
-  lager:debug("missed keys ~p", [MissedKeys]),
-  MissedValues = MissFun(MissedKeys),
-  lists:foreach(fun({Key, Value}) ->
-	set(Key, Value)
-    end, MissedValues),
-  Result ++ MissedValues.
+  case Keys -- HitKeys of
+    [] ->
+      Result;
+    MissedKeys ->
+      lager:debug("missed keys ~p", [MissedKeys]),
+      MissedValues = MissFun(MissedKeys),
+      lists:foreach(fun({Key, Value}) ->
+	    set(Key, Value)
+	end, MissedValues),
+      Result ++ MissedValues
+  end.
 
 %% gen_server callbacks
 
