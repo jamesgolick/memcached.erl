@@ -97,7 +97,8 @@ handle_sync_event(_Event, _From, StateName, State) ->
 
 handle_info({tcp,Sock,Message},State,#state{socket=Sock,waiter=Waiter}) ->
   Response = decode_response(Message),
-  reply(Response, State, Waiter),
+  Reply = reply(Response, State),
+  gen_fsm:reply(Waiter, Reply),
   {next_state, ready, #state{socket=Sock}};
 handle_info({tcp_closed,_},_,State) ->
   lager:info("The connection closed on us. Exiting..."),
@@ -165,20 +166,19 @@ decode_response(Packet, Packets) ->
     value = Value
   } | Packets]).
 
-reply(Packets, waiting_for_multiget, Waiter) ->
+reply(Packets, waiting_for_multiget) ->
   Filtered = lists:filter(fun(#packet{status=Status}) ->
 	Status == ok
     end, Packets),
-  KeyValues = [{P#packet.key, P#packet.value} || P <- Filtered],
-  gen_fsm:reply(Waiter, KeyValues);
-reply([#packet{status=ok,op=set}], waiting_for_set, Waiter) ->
-  gen_fsm:reply(Waiter, true);
-reply([#packet{status=ok,value=Value}], _, Waiter) ->
-  gen_fsm:reply(Waiter, Value);
-reply([#packet{status=not_found}], _, Waiter) ->
-  gen_fsm:reply(Waiter, undefined);
-reply([#packet{status=Status,value=Value}], _, Waiter) ->
-  gen_fsm:reply(Waiter, {Status, Value}).
+  [{P#packet.key, P#packet.value} || P <- Filtered];
+reply([#packet{status=ok,op=set}], waiting_for_set) ->
+  true;
+reply([#packet{status=ok,value=Value}], _) ->
+  Value;
+reply([#packet{status=not_found}], _) ->
+  undefined;
+reply([#packet{status=Status,value=Value}], _) ->
+  {Status, Value}.
 
 opcode(get) ->
   16#00;
