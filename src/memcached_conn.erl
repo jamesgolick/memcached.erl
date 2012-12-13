@@ -36,7 +36,8 @@
     flags :: integer(),
     status :: atom(),
     key :: binary(),
-    value :: binary()
+    value = <<>> :: binary(),
+    extra = <<>> :: binary()
   }).
 
 -define(MAGIC_REQUEST, 16#80).
@@ -77,6 +78,11 @@ ready({get, Key}, From, State) ->
   Packet = make_packet(get, Key),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
+  {next_state, waiting_for_get, State#state{waiter=From}};
+ready({set, Key, Value, Expires}, From, State) ->
+  Packet = make_packet(set, Key, Value, Expires),
+  lager:debug("packet ~p", [Packet]),
+  gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting_for_get, State#state{waiter=From}}.
 
 handle_event(_Event, StateName, State) ->
@@ -109,24 +115,37 @@ make_packet(Command, Key) ->
   Header = make_header(#packet{op=Command,key=Key}),
   <<Header/binary, Key/binary>>.
 
-make_header(#packet{op=Op,key=Key}) ->
+make_packet(Command, Key, Value, Expires) ->
+  Extra = <<16#deadbeef:32/integer, Expires:32/integer>>,
+  Header = make_header(#packet{op=Command,key=Key,value=Value,extra=Extra}),
+  <<Header/binary, Extra/binary, Key/binary, Value/binary>>.
+
+make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
   Opcode = opcode(Op),
   KeyLength = size(Key),
+  ExtraLength = size(Extra),
+  TotalBody = KeyLength + ExtraLength + size(Value),
   <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
-    0:8/integer, 0:8/integer, 0:16/integer, KeyLength:32/integer,
+    ExtraLength:8/integer, 0:8/integer, 0:16/integer, TotalBody:32/integer,
     0:32/integer, 0:64/integer>>.
 
 decode_response(Packet) ->
-  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, _:16/integer, FlagsLength:8/integer, _:8/integer, StatusCode:16/integer, BodyLength:32/integer, _:32/integer, _:64/integer, Body/binary>> = Packet,
-  FlagsBits = FlagsLength * 8,
-  <<Flags:FlagsBits/integer, Value:BodyLength/binary>> = Body,
+  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, _:16/integer,
+    ExtraLength:8/integer, _:8/integer, StatusCode:16/integer,
+    BodyLength:32/integer, _:32/integer, _:64/integer,
+    Body/binary>> = Packet,
+  ValueLength = BodyLength - ExtraLength,
+  ExtraBits = ExtraLength * 8,
+  <<Extra:ExtraBits/integer, Value:ValueLength/binary>> = Body,
   #packet{
     op = op(Opcode),
-    flags = Flags,
+    extra = Extra,
     status = status(StatusCode),
     value = Value
   }.
 
+reply(#packet{status=ok,op=set}, Waiter) ->
+  gen_fsm:reply(Waiter, true);
 reply(#packet{status=ok,value=Value}, Waiter) ->
   gen_fsm:reply(Waiter, Value);
 reply(#packet{status=not_found}, Waiter) ->
@@ -135,10 +154,14 @@ reply(#packet{status=Status,value=Value}, Waiter) ->
   gen_fsm:reply(Waiter, {Status, Value}).
 
 opcode(get) ->
-  16#00.
+  16#00;
+opcode(set) ->
+  16#01.
 
 op(16#00) ->
-  get.
+  get;
+op(16#01) ->
+  set.
 
 status(16#0000) ->
   ok;
