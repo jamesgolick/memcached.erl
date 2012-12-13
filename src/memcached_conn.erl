@@ -82,12 +82,12 @@ ready({set, Key, Value, Expires}, From, State) ->
   Packet = make_packet(set, Key, Value, Expires),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
-  {next_state, waiting_for_get, State#state{waiter=From}};
+  {next_state, waiting_for_set, State#state{waiter=From}};
 ready({multiget, Keys}, From, State) ->
   Packets = make_multiget_packets(Keys),
   lager:debug("packets ~p", [Packets]),
   gen_tcp:send(State#state.socket, Packets),
-  {next_state, waiting_for_get, State#state{waiter=From}}.
+  {next_state, waiting_for_multiget, State#state{waiter=From}}.
 
 handle_event(_Event, StateName, State) ->
   {next_state, StateName, State}.
@@ -95,9 +95,9 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
   {reply, ok, StateName, State}.
 
-handle_info({tcp,Sock,Message},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
+handle_info({tcp,Sock,Message},State,#state{socket=Sock,waiter=Waiter}) ->
   Response = decode_response(Message),
-  reply(Response, Waiter),
+  reply(Response, State, Waiter),
   {next_state, ready, #state{socket=Sock}};
 handle_info({tcp_closed,_},_,State) ->
   lager:info("The connection closed on us. Exiting..."),
@@ -165,20 +165,20 @@ decode_response(Packet, Packets) ->
     value = Value
   } | Packets]).
 
-reply([#packet{status=ok,op=set}], Waiter) ->
-  gen_fsm:reply(Waiter, true);
-reply([#packet{status=ok,value=Value}], Waiter) ->
-  gen_fsm:reply(Waiter, Value);
-reply([#packet{status=not_found}], Waiter) ->
-  gen_fsm:reply(Waiter, undefined);
-reply([#packet{status=Status,value=Value}], Waiter) ->
-  gen_fsm:reply(Waiter, {Status, Value});
-reply(Packets, Waiter) ->
+reply(Packets, waiting_for_multiget, Waiter) ->
   Filtered = lists:filter(fun(#packet{status=Status}) ->
 	Status == ok
     end, Packets),
   KeyValues = [{P#packet.key, P#packet.value} || P <- Filtered],
-  gen_fsm:reply(Waiter, KeyValues).
+  gen_fsm:reply(Waiter, KeyValues);
+reply([#packet{status=ok,op=set}], waiting_for_set, Waiter) ->
+  gen_fsm:reply(Waiter, true);
+reply([#packet{status=ok,value=Value}], _, Waiter) ->
+  gen_fsm:reply(Waiter, Value);
+reply([#packet{status=not_found}], _, Waiter) ->
+  gen_fsm:reply(Waiter, undefined);
+reply([#packet{status=Status,value=Value}], _, Waiter) ->
+  gen_fsm:reply(Waiter, {Status, Value}).
 
 opcode(get) ->
   16#00;
