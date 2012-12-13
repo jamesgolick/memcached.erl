@@ -115,6 +115,15 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% Internal functions.
 
+make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
+  Opcode = opcode(Op),
+  KeyLength = size(Key),
+  ExtraLength = size(Extra),
+  TotalBody = KeyLength + ExtraLength + size(Value),
+  <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
+    ExtraLength:8/integer, 0:8/integer, 0:16/integer, TotalBody:32/integer,
+    0:32/integer, 0:64/integer>>.
+
 make_packet(Command, Key) ->
   Header = make_header(#packet{op=Command,key=Key}),
   <<Header/binary, Key/binary>>.
@@ -133,15 +142,6 @@ make_multiget_packets([Key], Packets) ->
 make_multiget_packets([Key | Keys], Packets) ->
   Packet = make_packet(getkq, Key),
   make_multiget_packets(Keys, <<Packets/binary, Packet/binary>>).
-
-make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
-  Opcode = opcode(Op),
-  KeyLength = size(Key),
-  ExtraLength = size(Extra),
-  TotalBody = KeyLength + ExtraLength + size(Value),
-  <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
-    ExtraLength:8/integer, 0:8/integer, 0:16/integer, TotalBody:32/integer,
-    0:32/integer, 0:64/integer>>.
 
 decode_response(Packet) ->
   decode_response(Packet, []).
