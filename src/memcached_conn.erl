@@ -33,7 +33,6 @@
 
 -record(packet, {
     op :: atom(),
-    flags :: integer(),
     status :: atom(),
     key :: binary(),
     value = <<>> :: binary(),
@@ -83,6 +82,11 @@ ready({set, Key, Value, Expires}, From, State) ->
   Packet = make_packet(set, Key, Value, Expires),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
+  {next_state, waiting_for_get, State#state{waiter=From}};
+ready({multiget, Keys}, From, State) ->
+  Packets = make_multiget_packets(Keys),
+  lager:debug("packets ~p", [Packets]),
+  gen_tcp:send(State#state.socket, Packets),
   {next_state, waiting_for_get, State#state{waiter=From}}.
 
 handle_event(_Event, StateName, State) ->
@@ -120,6 +124,16 @@ make_packet(Command, Key, Value, Expires) ->
   Header = make_header(#packet{op=Command,key=Key,value=Value,extra=Extra}),
   <<Header/binary, Extra/binary, Key/binary, Value/binary>>.
 
+make_multiget_packets(Keys) ->
+  make_multiget_packets(Keys, <<>>).
+
+make_multiget_packets([Key], Packets) ->
+  Packet = make_packet(getk, Key),
+  <<Packets/binary, Packet/binary>>;
+make_multiget_packets([Key | Keys], Packets) ->
+  Packet = make_packet(getkq, Key),
+  make_multiget_packets(Keys, <<Packets/binary, Packet/binary>>).
+
 make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
   Opcode = opcode(Op),
   KeyLength = size(Key),
@@ -130,38 +144,57 @@ make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
     0:32/integer, 0:64/integer>>.
 
 decode_response(Packet) ->
-  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, _:16/integer,
+  decode_response(Packet, []).
+
+decode_response(<<>>, Packets) ->
+  Packets;
+decode_response(Packet, Packets) ->
+  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, KeyLength:16/integer,
     ExtraLength:8/integer, _:8/integer, StatusCode:16/integer,
     BodyLength:32/integer, _:32/integer, _:64/integer,
     Body/binary>> = Packet,
-  ValueLength = BodyLength - ExtraLength,
+  ValueLength = BodyLength - KeyLength - ExtraLength,
   ExtraBits = ExtraLength * 8,
-  <<Extra:ExtraBits/integer, Value:ValueLength/binary>> = Body,
-  #packet{
+  <<Extra:ExtraBits/integer, Key:KeyLength/binary,
+    Value:ValueLength/binary, Remainder/binary>> = Body,
+  decode_response(Remainder, [#packet{
     op = op(Opcode),
     extra = Extra,
     status = status(StatusCode),
+    key = Key,
     value = Value
-  }.
+  } | Packets]).
 
-reply(#packet{status=ok,op=set}, Waiter) ->
+reply([#packet{status=ok,op=set}], Waiter) ->
   gen_fsm:reply(Waiter, true);
-reply(#packet{status=ok,value=Value}, Waiter) ->
+reply([#packet{status=ok,value=Value}], Waiter) ->
   gen_fsm:reply(Waiter, Value);
-reply(#packet{status=not_found}, Waiter) ->
+reply([#packet{status=not_found}], Waiter) ->
   gen_fsm:reply(Waiter, undefined);
-reply(#packet{status=Status,value=Value}, Waiter) ->
-  gen_fsm:reply(Waiter, {Status, Value}).
+reply([#packet{status=Status,value=Value}], Waiter) ->
+  gen_fsm:reply(Waiter, {Status, Value});
+reply(Packets, Waiter) ->
+  KeyValues = [{P#packet.key, P#packet.value} || P <- Packets],
+  gen_fsm:reply(Waiter, KeyValues).
 
 opcode(get) ->
   16#00;
 opcode(set) ->
-  16#01.
+  16#01;
+opcode(getk) ->
+  16#0C;
+opcode(getkq) ->
+  16#0D.
 
 op(16#00) ->
   get;
 op(16#01) ->
-  set.
+  set;
+op(16#0C) ->
+  getk;
+op(16#0D) ->
+  getkq.
+
 
 status(16#0000) ->
   ok;
