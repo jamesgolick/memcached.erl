@@ -174,7 +174,10 @@ reply([#packet{status=not_found}], Waiter) ->
 reply([#packet{status=Status,value=Value}], Waiter) ->
   gen_fsm:reply(Waiter, {Status, Value});
 reply(Packets, Waiter) ->
-  KeyValues = [{P#packet.key, P#packet.value} || P <- Packets],
+  Filtered = lists:filter(fun(#packet{status=Status}) ->
+	Status == ok
+    end, Packets),
+  KeyValues = [{P#packet.key, P#packet.value} || P <- Filtered],
   gen_fsm:reply(Waiter, KeyValues).
 
 opcode(get) ->
