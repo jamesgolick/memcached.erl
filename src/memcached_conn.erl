@@ -31,6 +31,17 @@
     waiter
   }).
 
+-record(packet, {
+    op :: atom(),
+    flags :: integer(),
+    status :: atom(),
+    key :: binary(),
+    value :: binary()
+  }).
+
+-define(MAGIC_REQUEST, 16#80).
+-define(MAGIC_RESPONSE, 16#81).
+
 %% public api
 
 start_link(Server) ->
@@ -63,22 +74,10 @@ init([Host, Port]) ->
   {ok, ready, #state{socket=Socket}}.
 
 ready({get, Key}, From, State) ->
-  gen_tcp:send(State#state.socket, <<"get ", Key/binary, "\r\n">>),
-  {next_state, waiting_for_get, State#state{waiter=From}};
-ready({multiget, Keys}, From, State) ->
-  KeyList = binary_join(Keys, <<" ">>),
-  gen_tcp:send(State#state.socket, <<"get ", KeyList/binary, "\r\n">>),
-  {next_state, waiting_for_multiget, State#state{waiter=From}};
-ready({set, Key, Value, Expires}, From, State) ->
-  Length = integer_to_binary(byte_size(Value)),
-  ExpiresBinary = integer_to_binary(Expires),
-  CmdParts = [[<<"set">>, Key, <<"0">>, ExpiresBinary, Length], [Value]],
-  Cmd = lists:foldl(fun(RawLine, Command) ->
-	Line = binary_join(RawLine, <<" ">>),
-	<<Command/binary, Line/binary, "\r\n">>
-    end, <<"">>, CmdParts),
-  gen_tcp:send(State#state.socket, Cmd),
-  {next_state, waiting, State#state{waiter=From}}.
+  Packet = make_packet(get, Key),
+  lager:debug("packet ~p", [Packet]),
+  gen_tcp:send(State#state.socket, Packet),
+  {next_state, waiting_for_get, State#state{waiter=From}}.
 
 handle_event(_Event, StateName, State) ->
   {next_state, StateName, State}.
@@ -86,23 +85,15 @@ handle_event(_Event, StateName, State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
   {reply, ok, StateName, State}.
 
-handle_info({tcp,Sock,<<"STORED\r\n">>},waiting,#state{socket=Sock,waiter=Waiter}) ->
-  gen_fsm:reply(Waiter, true),
+handle_info({tcp,Sock,Message},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
+  Response = decode_response(Message),
+  reply(Response, Waiter),
   {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,<<"END\r\n">>},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
-  gen_fsm:reply(Waiter, undefined),
-  {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,<<"END\r\n">>},waiting_for_multiget,#state{socket=Sock,waiter=Waiter}) ->
-  gen_fsm:reply(Waiter, []),
-  {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_get,#state{socket=Sock,waiter=Waiter}) ->
-  [{_, Value} | _] = get_values(Message),
-  gen_fsm:reply(Waiter, Value),
-  {next_state, ready, #state{socket=Sock}};
-handle_info({tcp,Sock,Message = <<"VALUE", _/binary>>},waiting_for_multiget,#state{socket=Sock,waiter=Waiter}) ->
-  gen_fsm:reply(Waiter, get_values(Message)),
-  {next_state, ready, #state{socket=Sock}};
+handle_info({tcp_closed,_},_,State) ->
+  lager:info("The connection closed on us. Exiting..."),
+  {stop, normal, State};
 handle_info(_Info, StateName, State) ->
+  lager:debug("~p", [_Info]),
   {next_state, StateName, State}.
 
 terminate(_Reason, _StateName, _State) ->
@@ -114,25 +105,52 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %% Internal functions.
 
-get_values(Message) ->
-  get_values(Message, []).
+make_packet(Command, Key) ->
+  Header = make_header(#packet{op=Command,key=Key}),
+  <<Header/binary, Key/binary>>.
 
-get_values(<<"END\r\n">>, Acc) ->
-  Acc;
-get_values(Message, Acc) ->
-  [Details, Remainder] = binary:split(Message, <<"\r\n">>),
-  [_, Key, _, RawLength] = binary:split(Details, <<" ">>, [global]),
-  Length = list_to_integer(binary_to_list(RawLength)),
-  <<Value:Length/binary, "\r\n", Remainder2/binary>> = Remainder,
-  get_values(Remainder2, [{Key, Value} | Acc]).
+make_header(#packet{op=Op,key=Key}) ->
+  Opcode = opcode(Op),
+  KeyLength = size(Key),
+  <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
+    0:8/integer, 0:8/integer, 0:16/integer, KeyLength:32/integer,
+    0:32/integer, 0:64/integer>>.
 
-binary_join([Head | List], Pattern) ->
-  binary_join(List, Pattern, Head).
+decode_response(Packet) ->
+  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, _:16/integer, FlagsLength:8/integer, _:8/integer, StatusCode:16/integer, BodyLength:32/integer, _:32/integer, _:64/integer, Body/binary>> = Packet,
+  FlagsBits = FlagsLength * 8,
+  <<Flags:FlagsBits/integer, Value:BodyLength/binary>> = Body,
+  #packet{
+    op = op(Opcode),
+    flags = Flags,
+    status = status(StatusCode),
+    value = Value
+  }.
 
-binary_join([], _, Acc) ->
-  Acc;
-binary_join([Head | List], Pattern, Acc) ->
-  binary_join(List, Pattern, <<Acc/binary, Pattern/binary, Head/binary>>).
+reply(#packet{status=ok,value=Value}, Waiter) ->
+  gen_fsm:reply(Waiter, Value);
+reply(#packet{status=not_found}, Waiter) ->
+  gen_fsm:reply(Waiter, undefined);
+reply(#packet{status=Status,value=Value}, Waiter) ->
+  gen_fsm:reply(Waiter, {Status, Value}).
 
-integer_to_binary(Int) ->
-  list_to_binary(lists:flatten(io_lib:format("~p", [Int]))).
+opcode(get) ->
+  16#00.
+
+op(16#00) ->
+  get.
+
+status(16#0000) ->
+  ok;
+status(16#0001) ->
+  not_found;
+status(16#0002) ->
+  exists;
+status(16#0003) ->
+  too_large;
+status(16#0004) ->
+  invalid_arguments;
+status(16#0005) ->
+  not_stored;
+status(16#0006) ->
+  non_numeric.
