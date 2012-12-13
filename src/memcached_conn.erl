@@ -195,7 +195,6 @@ op(16#0C) ->
 op(16#0D) ->
   getkq.
 
-
 status(16#0000) ->
   ok;
 status(16#0001) ->
