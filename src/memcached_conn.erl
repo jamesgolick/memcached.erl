@@ -41,7 +41,7 @@
 
 -define(MAGIC_REQUEST, 16#80).
 -define(MAGIC_RESPONSE, 16#81).
--define(BUFFER_SIZE, 10000).
+-define(BUFFER_SIZE, 100000).
 
 %% public api
 
