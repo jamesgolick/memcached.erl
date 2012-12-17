@@ -41,7 +41,6 @@
 
 -define(MAGIC_REQUEST, 16#80).
 -define(MAGIC_RESPONSE, 16#81).
--define(BUFFER_SIZE, 100000).
 
 %% public api
 
@@ -71,9 +70,7 @@ set(Pid, Key, Value, Expires) when is_binary(Key) and is_binary(Value) ->
 %% gen_fsm callbacks
 
 init([Host, Port]) ->
-  {ok, Socket} = gen_tcp:connect(Host, Port, [binary,
-					      {packet, 0},
-					      {buffer, ?BUFFER_SIZE}]),
+  {ok, Socket} = gen_tcp:connect(Host, Port, [binary, {packet, 0}]),
   {ok, ready, #state{socket=Socket}}.
 
 ready({get, Key}, From, State) ->
