@@ -1,12 +1,15 @@
 -module(memcached_proto).
 
--export([frame_packets/2]).
+-export([frame_packets/1]).
 
 -define(MAGIC_RESPONSE, 16#81).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+frame_packets(Packets) ->
+  frame_packets(Packets, []).
 
 frame_packets(Packets, Framed) ->
   case size(Packets) of
@@ -34,24 +37,24 @@ frame_packets(Packets, Framed) ->
 
 frame_packets_test() ->
   Message = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
-  ?assertEqual({complete, [Message]}, frame_packets(Message, [])).
+  ?assertEqual({complete, [Message]}, frame_packets(Message)).
 
 incomplete_header_frame_packets_test() ->
   FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   Message = <<FirstPacket/binary, 129>>,
-  ?assertEqual({incomplete, <<129>>, [FirstPacket]}, frame_packets(Message, [])).
+  ?assertEqual({incomplete, <<129>>, [FirstPacket]}, frame_packets(Message)).
 
 incomplete_body_frame_packets_test() ->
   FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   Remainder = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10>>,
   Message = <<FirstPacket/binary, Remainder/binary>>,
-  ?assertEqual({incomplete, Remainder, [FirstPacket]}, frame_packets(Message, [])).
+  ?assertEqual({incomplete, Remainder, [FirstPacket]}, frame_packets(Message)).
 
 multiple_packets_frame_packets_test() ->
   FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   SecondPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   Message = <<FirstPacket/binary, SecondPacket/binary>>,
-  Result = frame_packets(Message, []),
+  Result = frame_packets(Message),
   ?assertEqual({complete, [FirstPacket, SecondPacket]}, Result).
 
 -endif.
