@@ -2,10 +2,14 @@
 
 -export([frame/1,
 	 decode/1,
+	 make_packet/2,
+	 make_packet/4,
+	 make_multiget_packets/1,
 	 op/1,
 	 opcode/1,
 	 status/1]).
 
+-define(MAGIC_REQUEST, 16#80).
 -define(MAGIC_RESPONSE, 16#81).
 
 -include("include/memcached.hrl").
@@ -57,6 +61,35 @@ decode([ThisPacket | Remainder], Packets) ->
     key = Key,
     value = Value
   } | Packets]).
+
+make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
+  Opcode = memcached_proto:opcode(Op),
+  KeyLength = size(Key),
+  ExtraLength = size(Extra),
+  TotalBody = KeyLength + ExtraLength + size(Value),
+  <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
+    ExtraLength:8/integer, 0:8/integer, 0:16/integer, TotalBody:32/integer,
+    0:32/integer, 0:64/integer>>.
+
+make_packet(Command, Key) ->
+  Header = make_header(#packet{op=Command,key=Key}),
+  <<Header/binary, Key/binary>>.
+
+make_packet(Command, Key, Value, Expires) ->
+  Extra = <<16#deadbeef:32/integer, Expires:32/integer>>,
+  Header = make_header(#packet{op=Command,key=Key,value=Value,extra=Extra}),
+  <<Header/binary, Extra/binary, Key/binary, Value/binary>>.
+
+make_multiget_packets(Keys) ->
+  make_multiget_packets(Keys, <<>>).
+
+make_multiget_packets([Key], Packets) ->
+  Packet = make_packet(getk, Key),
+  <<Packets/binary, Packet/binary>>;
+make_multiget_packets([Key | Keys], Packets) ->
+  Packet = make_packet(getkq, Key),
+  make_multiget_packets(Keys, <<Packets/binary, Packet/binary>>).
+
 
 opcode(get) ->
   16#00;

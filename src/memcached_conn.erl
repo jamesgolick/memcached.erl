@@ -2,6 +2,8 @@
 
 -behaviour(gen_fsm).
 
+-include_lib("include/memcached.hrl").
+
 %% public apis
 
 -export([start_link/1]).
@@ -36,17 +38,6 @@
     decoded = []
   }).
 
--record(packet, {
-    op :: atom(),
-    status :: atom(),
-    key :: binary(),
-    value = <<>> :: binary(),
-    extra = <<>> :: binary()
-  }).
-
--define(MAGIC_REQUEST, 16#80).
--define(MAGIC_RESPONSE, 16#81).
-
 %% public api
 
 start_link(Server) ->
@@ -79,17 +70,17 @@ init([Host, Port]) ->
   {ok, ready, #state{socket=Socket}}.
 
 ready({get, Key}, From, State) ->
-  Packet = make_packet(get, Key),
+  Packet = memcached_proto:make_packet(get, Key),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
 ready({set, Key, Value, Expires}, From, State) ->
-  Packet = make_packet(set, Key, Value, Expires),
+  Packet = memcached_proto:make_packet(set, Key, Value, Expires),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
 ready({multiget, Keys}, From, State) ->
-  Packets = make_multiget_packets(Keys),
+  Packets = memcached_proto:make_multiget_packets(Keys),
   lager:debug("packets ~p", [Packets]),
   gen_tcp:send(State#state.socket, Packets),
   {next_state, waiting_for_multiget, State#state{waiter=From}}.
@@ -148,34 +139,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
   {ok, StateName, State}.
 
 %% Internal functions.
-
-make_header(#packet{op=Op,key=Key,extra=Extra,value=Value}) ->
-  Opcode = memcached_proto:opcode(Op),
-  KeyLength = size(Key),
-  ExtraLength = size(Extra),
-  TotalBody = KeyLength + ExtraLength + size(Value),
-  <<?MAGIC_REQUEST/integer, Opcode:8/integer, KeyLength:16/integer,
-    ExtraLength:8/integer, 0:8/integer, 0:16/integer, TotalBody:32/integer,
-    0:32/integer, 0:64/integer>>.
-
-make_packet(Command, Key) ->
-  Header = make_header(#packet{op=Command,key=Key}),
-  <<Header/binary, Key/binary>>.
-
-make_packet(Command, Key, Value, Expires) ->
-  Extra = <<16#deadbeef:32/integer, Expires:32/integer>>,
-  Header = make_header(#packet{op=Command,key=Key,value=Value,extra=Extra}),
-  <<Header/binary, Extra/binary, Key/binary, Value/binary>>.
-
-make_multiget_packets(Keys) ->
-  make_multiget_packets(Keys, <<>>).
-
-make_multiget_packets([Key], Packets) ->
-  Packet = make_packet(getk, Key),
-  <<Packets/binary, Packet/binary>>;
-make_multiget_packets([Key | Keys], Packets) ->
-  Packet = make_packet(getkq, Key),
-  make_multiget_packets(Keys, <<Packets/binary, Packet/binary>>).
 
 reply(Packets, waiting_for_multiget) ->
   Filtered = lists:filter(fun(#packet{status=Status}) ->
