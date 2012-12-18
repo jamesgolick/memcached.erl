@@ -222,7 +222,7 @@ update_test() ->
     Node = 'old@host', NewNode = 'new@host',
     
     % Create a fresh ring...
-    CHash = chash:fresh(5, Node),
+    CHash = memcached_chash:fresh(5, Node),
     GetNthIndex = fun(N, {_, Nodes}) -> {Index, _} = lists:nth(N, Nodes), Index end,
     
     % Test update...
@@ -232,31 +232,31 @@ update_test() ->
     {5, [{_, Node}, {_, Node}, {_, NewNode}, {_, Node}, {_, Node}, {_, Node}]} = update(ThirdIndex, NewNode, CHash).
 
 contains_test() ->
-    CHash = chash:fresh(8, the_node),
+    CHash = memcached_chash:fresh(8, the_node),
     ?assertEqual(true, contains_name(the_node,CHash)),
     ?assertEqual(false, contains_name(some_other_node,CHash)).
 
 max_n_test() ->
-    CHash = chash:fresh(8, the_node),
+    CHash = memcached_chash:fresh(8, the_node),
     ?assertEqual(1, max_n(1,CHash)),
     ?assertEqual(8, max_n(11,CHash)).
     
 simple_size_test() ->
-    ?assertEqual(8, length(chash:nodes(chash:fresh(8,the_node)))).
+    ?assertEqual(8, length(memcached_chash:nodes(memcached_chash:fresh(8,the_node)))).
 
 successors_length_test() ->
-    ?assertEqual(8, length(chash:successors(chash:key_of(0),
-                                            chash:fresh(8,the_node)))).
+    ?assertEqual(8, length(memcached_chash:successors(memcached_chash:key_of(0),
+                                            memcached_chash:fresh(8,the_node)))).
 inverse_pred_test() ->
-    CHash = chash:fresh(8,the_node),
-    S = [I || {I,_} <- chash:successors(chash:key_of(4),CHash)],
-    P = [I || {I,_} <- chash:predecessors(chash:key_of(4),CHash)],
+    CHash = memcached_chash:fresh(8,the_node),
+    S = [I || {I,_} <- memcached_chash:successors(memcached_chash:key_of(4),CHash)],
+    P = [I || {I,_} <- memcached_chash:predecessors(memcached_chash:key_of(4),CHash)],
     ?assertEqual(S,lists:reverse(P)).
 
 merge_test() ->
-    CHashA = chash:fresh(8,node_one),
-    CHashB = chash:update(0,node_one,chash:fresh(8,node_two)),
-    CHash = chash:merge_rings(CHashA,CHashB),
-    ?assertEqual(node_one,chash:lookup(0,CHash)).
+    CHashA = memcached_chash:fresh(8,node_one),
+    CHashB = memcached_chash:update(0,node_one,memcached_chash:fresh(8,node_two)),
+    CHash = memcached_chash:merge_rings(CHashA,CHashB),
+    ?assertEqual(node_one,memcached_chash:lookup(0,CHash)).
 
 -endif.
