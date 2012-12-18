@@ -1,8 +1,14 @@
 -module(memcached_proto).
 
--export([frame/1]).
+-export([frame/1,
+	 decode/1,
+	 op/1,
+	 opcode/1,
+	 status/1]).
 
 -define(MAGIC_RESPONSE, 16#81).
+
+-include("include/memcached.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -33,6 +39,60 @@ frame(Packets, Framed) ->
       {incomplete, Packets, Framed}
   end.
 
+decode(Packet) ->
+  decode(Packet, []).
+
+decode([], Packets) ->
+  Packets;
+decode([ThisPacket | Remainder], Packets) ->
+  <<?MAGIC_RESPONSE/integer, Opcode:8/integer, KeyLength:16/integer,
+    ExtraLength:8/integer, _:8/integer, StatusCode:16/integer,
+    BodyLength:32/integer, _:32/integer, _:64/integer,
+    Body/binary>> = ThisPacket,
+  ValueLength = BodyLength - KeyLength - ExtraLength,
+  ExtraBits = ExtraLength * 8,
+  <<Extra:ExtraBits/integer, Key:KeyLength/binary,
+    Value:ValueLength/binary>> = Body,
+  decode(Remainder, [#packet{
+    op = op(Opcode),
+    extra = Extra,
+    status = status(StatusCode),
+    key = Key,
+    value = Value
+  } | Packets]).
+
+opcode(get) ->
+  16#00;
+opcode(set) ->
+  16#01;
+opcode(getk) ->
+  16#0C;
+opcode(getkq) ->
+  16#0D.
+
+op(16#00) ->
+  get;
+op(16#01) ->
+  set;
+op(16#0C) ->
+  getk;
+op(16#0D) ->
+  getkq.
+
+status(16#0000) ->
+  ok;
+status(16#0001) ->
+  not_found;
+status(16#0002) ->
+  exists;
+status(16#0003) ->
+  too_large;
+status(16#0004) ->
+  invalid_arguments;
+status(16#0005) ->
+  not_stored;
+status(16#0006) ->
+  non_numeric.
 
 -ifdef(TEST).
 
@@ -57,5 +117,14 @@ multiple_packets_frame_test() ->
   Message = <<FirstPacket/binary, SecondPacket/binary>>,
   Result = frame(Message),
   ?assertEqual({complete, [FirstPacket, SecondPacket]}, Result).
+
+decode_error_test() ->
+  Packets = [<<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>],
+  [Result] = decode(Packets),
+  ?assertEqual(ok, Result#packet.status),
+  ?assertEqual(get, Result#packet.op),
+  ?assertEqual(<<>>, Result#packet.key),
+  ?assertEqual(<<"bsdf">>, Result#packet.value),
+  ?assertEqual(16#deadbeef, Result#packet.extra).
 
 -endif.
