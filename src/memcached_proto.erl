@@ -36,9 +36,15 @@ frame_packets_test() ->
   Message = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   ?assertEqual({complete, [Message]}, frame_packets(Message, [])).
 
-incomplete_frame_packets_test() ->
+incomplete_header_frame_packets_test() ->
   FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
   Message = <<FirstPacket/binary, 129>>,
   ?assertEqual({incomplete, <<129>>, [FirstPacket]}, frame_packets(Message, [])).
+
+incomplete_body_frame_packets_test() ->
+  FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
+  Remainder = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10>>,
+  Message = <<FirstPacket/binary, Remainder/binary>>,
+  ?assertEqual({incomplete, Remainder, [FirstPacket]}, frame_packets(Message, [])).
 
 -endif.
