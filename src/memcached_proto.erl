@@ -43,7 +43,7 @@ decode(Packet) ->
   decode(Packet, []).
 
 decode([], Packets) ->
-  Packets;
+  lists:reverse(Packets);
 decode([ThisPacket | Remainder], Packets) ->
   <<?MAGIC_RESPONSE/integer, Opcode:8/integer, KeyLength:16/integer,
     ExtraLength:8/integer, _:8/integer, StatusCode:16/integer,
