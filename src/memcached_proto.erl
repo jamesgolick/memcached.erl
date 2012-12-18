@@ -17,27 +17,24 @@
 frame(Packets) ->
   frame(Packets, []).
 
+frame(Packets, Framed) when size(Packets) >= 24 ->
+  <<Header:24/binary, _/binary>> = Packets,
+  <<?MAGIC_RESPONSE/integer, _:8/integer, _:16/integer,
+    _:8/integer, _:8/integer, _:16/integer,
+    BodyLength:32/integer, _:32/integer, _:64/integer,
+    BodyAndRemainder/binary>> = Packets,
+  case size(BodyAndRemainder) of
+    RemainderSize when RemainderSize < BodyLength ->
+      {incomplete, Packets, lists:reverse(Framed)};
+    RemainderSize when RemainderSize > BodyLength ->
+      <<Body:BodyLength/binary, Remainder/binary>> = BodyAndRemainder,
+      frame(Remainder, [<<Header/binary,Body/binary>> | Framed]);
+    BodyLength ->
+      AllFramed = [<<Header/binary,BodyAndRemainder/binary>> | Framed],
+      {complete, lists:reverse(AllFramed)}
+  end;
 frame(Packets, Framed) ->
-  case size(Packets) of
-    Size when Size >= 24 ->
-      <<Header:24/binary, _/binary>> = Packets,
-      <<?MAGIC_RESPONSE/integer, _:8/integer, _:16/integer,
-	_:8/integer, _:8/integer, _:16/integer,
-	BodyLength:32/integer, _:32/integer, _:64/integer,
-	BodyAndRemainder/binary>> = Packets,
-      case size(BodyAndRemainder) of
-	RemainderSize when RemainderSize < BodyLength ->
-	  {incomplete, Packets, lists:reverse(Framed)};
-	RemainderSize when RemainderSize > BodyLength ->
-	  <<Body:BodyLength/binary, Remainder/binary>> = BodyAndRemainder,
-	  frame(Remainder, [<<Header/binary,Body/binary>> | Framed]);
-	BodyLength ->
-	  AllFramed = [<<Header/binary,BodyAndRemainder/binary>> | Framed],
-	  {complete, lists:reverse(AllFramed)}
-      end;
-    _ ->
-      {incomplete, Packets, Framed}
-  end.
+  {incomplete, Packets, Framed}.
 
 decode(Packet) ->
   decode(Packet, []).
