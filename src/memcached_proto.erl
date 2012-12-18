@@ -18,7 +18,7 @@ frame_packets(Packets, Framed) ->
 	BodyAndRemainder/binary>> = Packets,
       case size(BodyAndRemainder) of
 	RemainderSize when RemainderSize < BodyLength ->
-	  {incomplete, Packets, Framed};
+	  {incomplete, Packets, lists:reverse(Framed)};
 	RemainderSize when RemainderSize > BodyLength ->
 	  <<Body:BodyLength/binary, Remainder/binary>> = BodyAndRemainder,
 	  frame_packets(Remainder, [<<Header/binary,Body/binary>> | Framed]);
@@ -46,5 +46,12 @@ incomplete_body_frame_packets_test() ->
   Remainder = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10>>,
   Message = <<FirstPacket/binary, Remainder/binary>>,
   ?assertEqual({incomplete, Remainder, [FirstPacket]}, frame_packets(Message, [])).
+
+multiple_packets_frame_packets_test() ->
+  FirstPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
+  SecondPacket = <<129,0,0,0,4,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,10,222,173,190,239,98,115,100,102>>,
+  Message = <<FirstPacket/binary, SecondPacket/binary>>,
+  Result = frame_packets(Message, []),
+  ?assertEqual({complete, [FirstPacket, SecondPacket]}, Result).
 
 -endif.
