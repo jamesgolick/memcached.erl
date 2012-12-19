@@ -8,7 +8,7 @@
 -define(RING_SIZE, 1000).
 
 create(Servers) ->
-  create(Servers, gb_trees:empty()).
+  create(Servers, undefined).
 
 create([], Ring) ->
   Ring;
@@ -19,49 +19,62 @@ create([Server | Servers], Ring) ->
 	Key = <<ServerBinary/binary, "-", IString/binary>>,
 	<<Hash1:40/integer, Hash2:40/integer,
 	  Hash3:40/integer, Hash4:40/integer>> = crypto:sha(Key),
-	gb_trees:enter(Hash1, Server,
-	  gb_trees:enter(Hash2, Server,
-	    gb_trees:enter(Hash3, Server,
-	      gb_trees:enter(Hash4, Server, InnerRing))))
+	add(Hash1, Server,
+	  add(Hash2, Server,
+	    add(Hash3, Server,
+	      add(Hash4, Server, InnerRing))))
       end, Ring, lists:seq(0, 39)),
   create(Servers, NewRing).
 
-get(Key, {_, Tree}) ->
-  <<Hash:40/integer, _/binary>> = crypto:sha(Key),
-  {_, Node} = find_nearest(Hash, Tree, {0, 0}),
-  Node.
-
-find_nearest(Hash, {Key, Value, Smaller, Bigger}, {RK, RV}) ->
-  Result2 = case Key of
-    Key when RK == 0 ->
-      {Key, Value};
-    Key when Key > Hash andalso Key < RK ->
-      {Key, Value};
-    _ ->
-      {RK, RV}
-  end,
-  {RK2, RV2} = Result2,
-  {SK, SV} = case Smaller of
-    nil ->
-      Result2;
-    {SmallerKey, _, _, _} when SmallerKey > RK2 ->
-      Result2;
-    _ ->
-      find_nearest(Hash, Smaller, Result2)
-  end,
-  {BK, BV} = case Bigger of
-    nil ->
-      Result2;
-    {BiggerKey, _, _, _} when BiggerKey > RK2 ->
-      Result2;
-    _ ->
-      find_nearest(Hash, Bigger, Result2)
-  end,
-  case SK of
-    SK when SK > Key ->
-      {Key, Value};
-    SK when SK < BK ->
-      {SK, SV};
-    _ ->
-      {BK, BV}
+add(R, Server, Node) when is_integer(R) ->
+  add(<<R:40/integer>>, Server, Node);
+add(Remaining = <<Byte:1/binary, Bytes/binary>>, Server, Node) ->
+  case Node of
+    {B, L, R, C, V} when Byte < B ->
+      {B, add(Remaining, Server, L), R, C, V};
+    {B, L, R, C, V} when Byte > B ->
+      {B, L, add(Remaining, Server, R), C, V};
+    undefined when Bytes == <<>> ->
+      {Byte, undefined, undefined, undefined, Server};
+    undefined ->
+      {Byte, undefined, undefined, add(Bytes, Server, undefined), undefined};
+    {B, L, R, C, V} ->
+      {B, L, R, add(Remaining, Server, C), V}
   end.
+
+
+get(Key, Ring) ->
+  <<Int:40/integer, _/binary>> = crypto:sha(Key),
+  Hash = <<Int/integer>>,
+  case find_nearest(Hash, Ring) of
+    undefined ->
+      smallest(Ring);
+    Node ->
+      Node
+  end.
+
+find_nearest(_, undefined) ->
+  undefined;
+find_nearest(<<>>, Node) ->
+  next_value(Node);
+find_nearest(Remaining = <<Byte:1/binary, Bytes/binary>>, Node = {B, L, R, C, _}) ->
+  case Byte of
+    Byte when Byte == B andalso Remaining == <<>> ->
+      next_value(Node);
+    Byte when Byte == B ->
+      find_nearest(Bytes, C);
+    Byte when Byte < B ->
+      find_nearest(Remaining, L);
+    Byte when Byte > B ->
+      find_nearest(Remaining, R)
+  end.
+
+next_value({_, _, _, C, undefined}) ->
+  next_value(C);
+next_value({_, _, _, _, V}) ->
+  V.
+
+smallest({_, undefined, _, C, _}) ->
+  next_value(C);
+smallest({_, L, _, _, _}) ->
+  smallest(L).
