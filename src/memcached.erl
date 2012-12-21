@@ -82,9 +82,11 @@ multiget(Keys, MissFun) ->
     MissedKeys ->
       lager:debug("missed keys ~p", [MissedKeys]),
       MissedValues = MissFun(MissedKeys),
-      lists:foreach(fun({Key, Value}) ->
-	    set(Key, Value)
-	end, MissedValues),
+      spawn(fun() ->
+	lists:foreach(fun({Key, Value}) ->
+	      set(Key, Value)
+	  end, MissedValues)
+      end),
       Result ++ MissedValues
   end.
 
