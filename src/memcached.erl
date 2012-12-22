@@ -91,6 +91,7 @@ multiget(Keys, MissFun) ->
       Result ++ MissedValues
   end.
 
+
 delete(Key) ->
   perform(Key, fun(Connection) ->
 	memcached_conn:delete(Connection, Key)
