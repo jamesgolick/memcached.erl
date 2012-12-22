@@ -10,7 +10,8 @@
 	 multiget/1,
 	 multiget/2,
 	 set/2,
-	 set/3]).
+	 set/3,
+	 delete/1]).
 
 -export([start_link/1,
 	 state/1,
@@ -89,6 +90,11 @@ multiget(Keys, MissFun) ->
       end),
       Result ++ MissedValues
   end.
+
+delete(Key) ->
+  perform(Key, fun(Connection) ->
+	memcached_conn:delete(Connection, Key)
+    end).
 
 %% gen_server callbacks
 

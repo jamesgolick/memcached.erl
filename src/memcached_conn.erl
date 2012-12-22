@@ -11,7 +11,8 @@
 -export([get/2,
 	 multiget/2,
 	 set/3,
-	 set/4]).
+	 set/4,
+	 delete/2]).
 
 %% gen_fsm callbacks
 
@@ -63,6 +64,11 @@ set(Pid, Key, Value) when is_binary(Key) and is_binary(Value) ->
 set(Pid, Key, Value, Expires) when is_binary(Key) and is_binary(Value) ->
   gen_fsm:sync_send_event(Pid, {set, Key, Value, Expires}).
 
+delete(Pid, Key) when is_binary(Key) ->
+  gen_fsm:sync_send_event(Pid, {delete, Key}).
+
+
+
 %% gen_fsm callbacks
 
 init([Host, Port]) ->
@@ -76,6 +82,11 @@ ready({get, Key}, From, State) ->
   {next_state, waiting, State#state{waiter=From}};
 ready({set, Key, Value, Expires}, From, State) ->
   Packet = memcached_proto:make_packet(set, Key, Value, Expires),
+  lager:debug("packet ~p", [Packet]),
+  gen_tcp:send(State#state.socket, Packet),
+  {next_state, waiting, State#state{waiter=From}};
+ready({delete, Key}, From, State) ->
+  Packet = memcached_proto:make_packet(delete, Key),
   lager:debug("packet ~p", [Packet]),
   gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
@@ -146,6 +157,8 @@ reply(Packets, waiting_for_multiget) ->
     end, Packets),
   [{P#packet.key, P#packet.value} || P <- Filtered];
 reply([#packet{status=ok,op=set}], _) ->
+  true;
+reply([#packet{status=ok,op=delete}], _) ->
   true;
 reply([#packet{status=ok,value=Value}], _) ->
   Value;

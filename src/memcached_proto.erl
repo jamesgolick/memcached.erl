@@ -98,7 +98,9 @@ opcode(set) ->
 opcode(getk) ->
   16#0C;
 opcode(getkq) ->
-  16#0D.
+  16#0D;
+opcode(delete) ->
+  16#04.
 
 op(16#00) ->
   get;
@@ -107,7 +109,9 @@ op(16#01) ->
 op(16#0C) ->
   getk;
 op(16#0D) ->
-  getkq.
+  getkq;
+op(16#04) ->
+  delete.
 
 status(16#0000) ->
   ok;
