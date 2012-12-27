@@ -2,10 +2,17 @@
 
 -export([
     create/1,
+    add/3,
+    smallest/1,
+    find_nearest/2,
     get/2
   ]).
 
 -define(RING_SIZE, 1000).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 create(Servers) ->
   create(Servers, undefined).
@@ -28,18 +35,18 @@ create([Server | Servers], Ring) ->
 
 add(R, Server, Node) when is_integer(R) ->
   add(<<R:40/integer>>, Server, Node);
-add(Remaining = <<Byte:1/binary, Bytes/binary>>, Server, Node) ->
+add(Remaining = <<Bit:1/bits, Bits/bits>>, Server, Node) ->
   case Node of
-    {B, L, R, C, V} when Byte < B ->
+    {B, L, R, C, V} when Bit < B ->
       {B, add(Remaining, Server, L), R, C, V};
-    {B, L, R, C, V} when Byte > B ->
+    {B, L, R, C, V} when Bit > B ->
       {B, L, add(Remaining, Server, R), C, V};
-    undefined when Bytes == <<>> ->
-      {Byte, undefined, undefined, undefined, Server};
+    undefined when Bits == <<>> ->
+      {Bit, undefined, undefined, undefined, Server};
     undefined ->
-      {Byte, undefined, undefined, add(Bytes, Server, undefined), undefined};
-    {B, L, R, C, V} ->
-      {B, L, R, add(Remaining, Server, C), V}
+      {Bit, undefined, undefined, add(Bits, Server, undefined), undefined};
+    {B, L, R, C, V} when Bit == B ->
+      {B, L, R, add(Bits, Server, C), V}
   end.
 
 
@@ -55,26 +62,69 @@ get(Key, Ring) ->
 
 find_nearest(_, undefined) ->
   undefined;
-find_nearest(<<>>, Node) ->
-  next_value(Node);
-find_nearest(Remaining = <<Byte:1/binary, Bytes/binary>>, Node = {B, L, R, C, _}) ->
-  case Byte of
-    Byte when Byte == B andalso Remaining == <<>> ->
-      next_value(Node);
-    Byte when Byte == B ->
-      find_nearest(Bytes, C);
-    Byte when Byte < B ->
-      find_nearest(Remaining, L);
-    Byte when Byte > B ->
+find_nearest(Remaining = <<Bit:1/bits, Bits/bits>>, Node = {B, L, R, C, V}) ->
+  case Bit of
+    Bit when Bit == B andalso V =/= undefined andalso Bits == <<>> ->
+      V;
+    Bit when Bit == B ->
+      case find_nearest(Bits, C) of
+	undefined ->
+	  smallest(R);
+	RS ->
+	  RS
+      end;
+    Bit when Bit < B ->
+      case find_nearest(Remaining, L) of
+	undefined ->
+	  smallest(Node);
+	RS ->
+	  RS
+      end;
+    Bit when Bit > B ->
       find_nearest(Remaining, R)
   end.
 
-next_value({_, _, _, C, undefined}) ->
-  next_value(C);
-next_value({_, _, _, _, V}) ->
-  V.
+smallest(undefined) ->
+  undefined;
+smallest({_, L, _, _, undefined}) when L =/= undefined ->
+  smallest(L);
+smallest({_, _, _, _, V}) when V =/= undefined ->
+  V;
+smallest({_, _, _, C, _}) when C =/= undefined ->
+  smallest(C).
 
-smallest({_, undefined, _, C, _}) ->
-  next_value(C);
-smallest({_, L, _, _, _}) ->
-  smallest(L).
+
+-ifdef(TEST).
+
+smallest_test() ->
+  Tree = add(<<5:8/integer>>, <<"five">>,
+	  add(<<10:8/integer>>, <<"ten">>,
+	    add(<<1:8/integer>>, <<"one">>, undefined))),
+  ?assertEqual(<<"one">>, smallest(Tree)),
+  Tree2 = add(<<5:8/integer>>, <<"five">>,
+	  add(<<10:8/integer>>, <<"ten">>,
+	    add(<<7:8/integer>>, <<"seven">>, undefined))),
+  ?assertEqual(<<"five">>, smallest(Tree2)),
+  Tree3 = add(<<1:8/integer>>, <<"one">>,
+	    add(<<2000:8/integer>>, <<"twothousand">>, undefined)),
+  ?assertEqual(<<"one">>, smallest(Tree3)).
+
+find_nearest_test() ->
+  Tree = add(<<5:8/integer>>, <<"five">>,
+	  add(<<10:8/integer>>, <<"ten">>,
+	    add(<<1:8/integer>>, <<"one">>, undefined))),
+
+  ?assertEqual(<<"one">>, find_nearest(<<1:8/integer>>, Tree)),
+  ?assertEqual(<<"one">>, find_nearest(<<0:8/integer>>, Tree)),
+  ?assertEqual(<<"five">>, find_nearest(<<2:8/integer>>, Tree)),
+  ?assertEqual(<<"five">>, find_nearest(<<3:8/integer>>, Tree)),
+  ?assertEqual(<<"five">>, find_nearest(<<4:8/integer>>, Tree)),
+  ?assertEqual(<<"five">>, find_nearest(<<5:8/integer>>, Tree)),
+  ?assertEqual(<<"ten">>, find_nearest(<<6:8/integer>>, Tree)),
+  ?assertEqual(<<"ten">>, find_nearest(<<7:8/integer>>, Tree)),
+  ?assertEqual(<<"ten">>, find_nearest(<<8:8/integer>>, Tree)),
+  ?assertEqual(<<"ten">>, find_nearest(<<9:8/integer>>, Tree)),
+  ?assertEqual(<<"ten">>, find_nearest(<<10:8/integer>>, Tree)),
+  ?assertEqual(undefined, find_nearest(<<11:8/integer>>, Tree)).
+
+-endif.
