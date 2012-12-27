@@ -2,9 +2,6 @@
 
 -export([
     create/1,
-    add/3,
-    smallest/1,
-    find_nearest/2,
     get/2
   ]).
 
