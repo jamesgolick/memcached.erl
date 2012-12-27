@@ -126,8 +126,14 @@ find_nearest_test() ->
   ?assertEqual(<<"ten">>, find_nearest(<<10:8/integer>>, Tree)),
   ?assertEqual(undefined, find_nearest(<<11:8/integer>>, Tree)).
 
-get_test() ->
-  Ring = create(["localhost:11211", "localhost:22122"]),
-  memcached_ring:get(<<"asdf">>, Ring).
+order_test() ->
+  order_test(<<"asdf">>),
+  order_test(<<"bsdf">>),
+  order_test(<<"stuff">>).
+
+order_test(Key) ->
+  Order1 = create(["app1:11211", "app2:11211", "app3:11211"]),
+  Order2 = create(["app2:11211", "app1:11211", "app3:11211"]),
+  ?assertEqual(memcached_ring:get(Key, Order1), memcached_ring:get(Key, Order2)).
 
 -endif.
