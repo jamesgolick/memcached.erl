@@ -51,8 +51,7 @@ add(Remaining = <<Bit:1/bits, Bits/bits>>, Server, Node) ->
 
 
 get(Key, Ring) ->
-  <<Int:40/integer, _/binary>> = crypto:sha(Key),
-  Hash = <<Int/integer>>,
+  <<Hash:5/binary, _/binary>> = crypto:sha(Key),
   case find_nearest(Hash, Ring) of
     undefined ->
       smallest(Ring);
@@ -126,5 +125,9 @@ find_nearest_test() ->
   ?assertEqual(<<"ten">>, find_nearest(<<9:8/integer>>, Tree)),
   ?assertEqual(<<"ten">>, find_nearest(<<10:8/integer>>, Tree)),
   ?assertEqual(undefined, find_nearest(<<11:8/integer>>, Tree)).
+
+get_test() ->
+  Ring = create(["localhost:11211", "localhost:22122"]),
+  memcached_ring:get(<<"asdf">>, Ring).
 
 -endif.
