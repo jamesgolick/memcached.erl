@@ -113,7 +113,6 @@ handle_call(state, _From, State) ->
   {reply, State, State};
 
 handle_call(get_ring, _From, State) ->
-  lager:debug("~p is asking for the ring.", [_From]),
   {reply, State#state.ring, State};
 
 handle_call({mark_up, Node}, _From, State) ->
