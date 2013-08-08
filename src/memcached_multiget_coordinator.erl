@@ -90,7 +90,7 @@ report(Pid, Node, Value) ->
 multiget(Node, Keys, Coordinator) ->
   case catch do_multiget(Node, Keys) of
     {'EXIT', Reason} ->
-      lager:info("mutliget to ~p for ~p failed with reason ~p", [Node, Keys, Reason]),
+      lager:info("mutliget to ~p failed with reason ~p", [Node, Reason]),
       memcached:mark_down(Node),
       report(Coordinator, Node, []);
     Value ->
