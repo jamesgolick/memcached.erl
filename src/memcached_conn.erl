@@ -78,22 +78,22 @@ init([Host, Port]) ->
 ready({get, Key}, From, State) ->
   Packet = memcached_proto:make_packet(get, Key),
   lager:debug("packet ~p", [Packet]),
-  gen_tcp:send(State#state.socket, Packet),
+  ok = gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
 ready({set, Key, Value, Expires}, From, State) ->
   Packet = memcached_proto:make_packet(set, Key, Value, Expires),
   lager:debug("packet ~p", [Packet]),
-  gen_tcp:send(State#state.socket, Packet),
+  ok = gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
 ready({delete, Key}, From, State) ->
   Packet = memcached_proto:make_packet(delete, Key),
   lager:debug("packet ~p", [Packet]),
-  gen_tcp:send(State#state.socket, Packet),
+  ok = gen_tcp:send(State#state.socket, Packet),
   {next_state, waiting, State#state{waiter=From}};
 ready({multiget, Keys}, From, State) ->
   Packets = memcached_proto:make_multiget_packets(Keys),
   lager:debug("packets ~p", [Packets]),
-  gen_tcp:send(State#state.socket, Packets),
+  ok = gen_tcp:send(State#state.socket, Packets),
   {next_state, waiting_for_multiget, State#state{waiter=From}}.
 
 waiting({complete, Packets}, State = #state{socket=Sock,waiter=Waiter}) ->
