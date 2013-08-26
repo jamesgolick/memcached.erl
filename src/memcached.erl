@@ -47,7 +47,8 @@ state(Pid) ->
   gen_server:call(Pid, state).
 
 get_ring() ->
-  ets:lookup(?TABLE_NAME, ring).
+  [{ring, Ring}] = ets:lookup(?TABLE_NAME, ring),
+  Ring.
 
 mark_down(Server) ->
   gen_server:call(?MODULE, {mark_down, Server}).
