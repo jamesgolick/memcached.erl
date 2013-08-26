@@ -32,6 +32,7 @@
 
 -define(MAX_ATTEMPTS, 3).
 -define(RETRY_TIME, 60).
+-define(TABLE_NAME, memcached_ring).
 
 %% Public API
 
@@ -46,7 +47,7 @@ state(Pid) ->
   gen_server:call(Pid, state).
 
 get_ring() ->
-  gen_server:call(?MODULE, get_ring).
+  ets:lookup(?TABLE_NAME, ring).
 
 mark_down(Server) ->
   gen_server:call(?MODULE, {mark_down, Server}).
@@ -100,6 +101,7 @@ delete(Key) ->
 
 init([Servers]) ->
   lager:debug("init with servers: ~p", [Servers]),
+  ets:new(?TABLE_NAME, [named_table, public, set, {heir, none}, {read_concurrency, true}]),
   TempState = #state{live_nodes=sets:from_list(Servers),dead_nodes=sets:new()},
   State = create_and_init_ring(TempState),
   {ok, State}.
@@ -206,7 +208,9 @@ create_and_init_ring(State=#state{live_nodes=Nodes}) ->
       lists:foreach(fun(Node) ->
 	    memcached_pool:create(Node)
 	end, NodesList),
-      State#state{ring=memcached_ring:create(NodesList)}
+      Ring = memcached_ring:create(NodesList),
+      ets:insert(?TABLE_NAME, {ring, Ring}),
+      State#state{ring=Ring}
   end.
 
 retry_against_dead_node(Node) ->
