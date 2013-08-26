@@ -135,9 +135,15 @@ handle_call({mark_down, Node}, _From, State) ->
     true ->
       NewLiveNodes = sets:del_element(Node, LiveNodes),
       NewDeadNodes = sets:add_element(Node, State#state.dead_nodes),
-      TempState = #state{live_nodes=NewLiveNodes,dead_nodes=NewDeadNodes},
+      case sets:size(NewLiveNodes) of
+	0 ->
+	  lager:info("No live nodes. Retrying them all."),
+	  TempState = #state{live_nodes=NewDeadNodes,dead_nodes=NewLiveNodes};
+	_ ->
+	  TempState = #state{live_nodes=NewLiveNodes,dead_nodes=NewDeadNodes},
+	  schedule_retry_dead_node_message(Node)
+      end,
       NewState = create_and_init_ring(TempState),
-      schedule_retry_dead_node_message(Node),
       {reply, ok, NewState};
     false ->
       {reply, ok, State}
