@@ -73,7 +73,13 @@ multiget(Keys) ->
       [];
     Ring ->
       {ok, Coordinator} = memcached_multiget_coordinator:start(Keys, Ring),
-      memcached_multiget_coordinator:get_result(Coordinator)
+      case catch memcached_multiget_coordinator:get_result(Coordinator) of
+	{'EXIT', {timeout, _}} ->
+	  exit(Coordinator, timeout),
+	  [];
+	Value ->
+	  Value
+      end
   end.
 
 multiget(Keys, MissFun) ->
