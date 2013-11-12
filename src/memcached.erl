@@ -66,6 +66,8 @@ set(Key, Value, Expires) ->
 	memcached_conn:set(Connection, Key, Value, Expires)
     end).
 
+multiget([]) ->
+  [];
 multiget(Keys) ->
   case get_ring() of
     no_live_nodes ->
