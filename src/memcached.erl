@@ -37,7 +37,7 @@
 %% Public API
 
 start_link(Servers) ->
-  memcached_sup:start_link(),
+  application:start(pooler),
   gen_server:start_link({local, ?MODULE}, ?MODULE, [Servers], []).
 
 stop(Pid) ->
