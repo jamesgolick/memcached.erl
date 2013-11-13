@@ -14,7 +14,7 @@ get_pool_options(Server) ->
       []
   end,
   DefaultOptions = [{name, list_to_atom(Server)},
-		    {group, riak},
+		    {group, memcached},
 		    {max_count, 5},
 		    {init_count, 2},
 		    {start_mfa,
